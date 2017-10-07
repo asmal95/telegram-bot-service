@@ -19,6 +19,9 @@ import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.TimeUnit;
 
 
 public class LongPollingUpdateProvider implements UpdateProvider {
@@ -68,13 +71,27 @@ public class LongPollingUpdateProvider implements UpdateProvider {
         }
 
         private TelegramBot telegramBot;
+        private int maxUpdate;
+
+        private int failureCount;
+
+        private static final int LONG_PULLING_TIMEOUT = 30;
+        private static final int MAX_FAILURE_ATTEMPTS = 5;
+        private static final int RETRY_INTERVAL_MS = 10 * 1000 * 60;
 
         @Override
         public void onSuccess(ResponseEntity<LongPollingResponse> responseEntity) {
-            int maxUpdate = 0;
+            LOGGER.debug("LongPolling success executed.");
+            failureCount = 0;
+
             LongPollingResponse response = responseEntity.getBody();
+            LOGGER.debug("Is response ok: {}", response.getOk());
+
             if (response.getOk()) {
-                for (Update update : response.getResult()) {
+                List<Update> updates = response.getResult();
+
+                LOGGER.debug("Updates count: {}", updates.size());
+                for (Update update : updates) {
                     telegramBot.handleUpdate(update);
                     if (update.getUpdateId() > maxUpdate) {
                         maxUpdate = update.getUpdateId();
@@ -82,10 +99,39 @@ public class LongPollingUpdateProvider implements UpdateProvider {
                 }
             }
 
+            getUpdates();
+        }
+
+        @Override
+        public void onFailure(Throwable throwable) {
+            LOGGER.error("Error during execute async method for get update", throwable);
+            if (failureCount++ < MAX_FAILURE_ATTEMPTS) {
+                try {
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (InterruptedException e) {
+                    LOGGER.debug("Sleeping was interrupted", e);
+                }
+                getUpdates();
+            }
+            if (failureCount >= MAX_FAILURE_ATTEMPTS) {
+                LOGGER.debug("Failure count: {}. Will create retry task", failureCount);
+                TimerTask retryTask = new TimerTask() {
+                    @Override
+                    public void run() {
+                        LOGGER.debug("Retry task was called");
+                        getUpdates();
+                    }
+                };
+                Timer timer = new Timer();
+                timer.schedule(retryTask, RETRY_INTERVAL_MS);
+            }
+        }
+
+        private void getUpdates() {
             if (isServiceRun) {
                 GetUpdates getUpdates = new GetUpdates();
                 getUpdates.setOffset(maxUpdate + 1);
-                getUpdates.setTimeout(30);
+                getUpdates.setTimeout(LONG_PULLING_TIMEOUT);
 
                 ListenableFuture<ResponseEntity<LongPollingResponse>> future =
                         executeMethodAsync(getUpdates, telegramBot.getToken(), LongPollingResponse.class);
@@ -93,12 +139,6 @@ public class LongPollingUpdateProvider implements UpdateProvider {
                 future.addCallback(this);
             }
         }
-
-        @Override
-        public void onFailure(Throwable throwable) {
-            LOGGER.error("Error during execute async method for get update", throwable);
-        }
-
     }
 
     private <T> ListenableFuture<ResponseEntity<T>> executeMethodAsync(ApiMethod apiMethod, String token, Class<T> clazz) {
