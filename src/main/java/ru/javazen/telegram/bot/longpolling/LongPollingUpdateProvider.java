@@ -19,8 +19,6 @@ import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
 
@@ -76,8 +74,6 @@ public class LongPollingUpdateProvider implements UpdateProvider {
         private int failureCount;
 
         private static final int LONG_PULLING_TIMEOUT = 30;
-        private static final int MAX_FAILURE_ATTEMPTS = 5;
-        private static final int RETRY_INTERVAL_MS = 10 * 1000 * 60;
 
         @Override
         public void onSuccess(ResponseEntity<LongPollingResponse> responseEntity) {
@@ -104,31 +100,21 @@ public class LongPollingUpdateProvider implements UpdateProvider {
 
         @Override
         public void onFailure(Throwable throwable) {
-            LOGGER.error("Error during execute async method for get update", throwable);
-            if (failureCount++ < MAX_FAILURE_ATTEMPTS) {
-                try {
-                    TimeUnit.SECONDS.sleep(1);
-                } catch (InterruptedException e) {
-                    LOGGER.debug("Sleeping was interrupted", e);
-                }
-                getUpdates();
+
+            LOGGER.error("Error during execute async method for get update. Failure count: ",
+                    failureCount++, throwable);
+
+            try {
+                TimeUnit.SECONDS.sleep(3);
+            } catch (InterruptedException e) {
+                LOGGER.debug("Sleeping was interrupted", e);
             }
-            if (failureCount >= MAX_FAILURE_ATTEMPTS) {
-                LOGGER.debug("Failure count: {}. Will create retry task", failureCount);
-                TimerTask retryTask = new TimerTask() {
-                    @Override
-                    public void run() {
-                        LOGGER.debug("Retry task was called");
-                        getUpdates();
-                    }
-                };
-                Timer timer = new Timer();
-                timer.schedule(retryTask, RETRY_INTERVAL_MS);
-            }
+            getUpdates();
         }
 
         private void getUpdates() {
             if (isServiceRun) {
+                LOGGER.trace("Creating new request for get updates");
                 GetUpdates getUpdates = new GetUpdates();
                 getUpdates.setOffset(maxUpdate + 1);
                 getUpdates.setTimeout(LONG_PULLING_TIMEOUT);
