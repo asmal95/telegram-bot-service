@@ -20,6 +20,7 @@ public class TelegramServiceImpl implements TelegramService {
     @Autowired
     private RestTemplate restTemplate;
 
+    @Override
     public <T> T executeMethod(ApiMethod apiMethod, String token, Class<T> clazz) {
         LOGGER.debug("Start executing {} method. Send the following entity: {}", apiMethod.getMethod(), apiMethod);
 
@@ -33,6 +34,11 @@ public class TelegramServiceImpl implements TelegramService {
 
         LOGGER.debug("returned value: " + result.toString());
         return result.getBody();
+    }
+
+    @Override
+    public void executeMethod(ApiMethod apiMethod, String token) {
+        executeMethod(apiMethod, token, Void.class);
     }
 
 }
