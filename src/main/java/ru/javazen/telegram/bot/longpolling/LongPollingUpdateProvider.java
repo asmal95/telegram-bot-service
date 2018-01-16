@@ -52,7 +52,7 @@ public class LongPollingUpdateProvider implements UpdateProvider {
     }
 
     private void startLongPollingForBot(TelegramBot bot) {
-        System.out.println("Registered bot: " + bot.getName());
+        LOGGER.info("Registered bot: {}", bot.getName());
         GetUpdates getUpdates = new GetUpdates();
         getUpdates.setTimeout(30);
         ListenableFuture<ResponseEntity<LongPollingResponse>> future =
